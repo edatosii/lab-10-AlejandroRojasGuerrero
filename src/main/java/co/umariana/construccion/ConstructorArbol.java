@@ -1,7 +1,15 @@
 package co.umariana.construccion;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import co.umariana.modelo.ArbolGenealogico;
 import co.umariana.modelo.ArbolInvalidoException;
+import co.umariana.modelo.Persona;
+import co.umariana.modelo.Posicion;
 
 /**
  * Construye un árbol genealógico a partir de un texto: cada línea es una persona.
@@ -44,14 +52,129 @@ public final class ConstructorArbol {
 
     private ConstructorArbol() {
     }
+    private static class ElementoLinea {
+        final int numeroLinea;
+        final Persona persona;
 
-    /**
-     * Convierte el texto en un árbol (ver las reglas arriba).
-     *
-     * @throws ArbolInvalidoException si el texto no cumple las reglas
-     */
+        ElementoLinea(int numeroLinea, Persona persona) {
+            this.numeroLinea = numeroLinea;
+            this.persona = persona;
+        }
+    }
     public static ArbolGenealogico construir(String texto) {
-        // TODO Etapa 3
-        throw new UnsupportedOperationException("TODO: construir");
+if (texto == null) {
+            throw new ArbolInvalidoException("El texto está vacío.");
+        }
+
+        String[] lineas = texto.split("\r?\n", -1);
+        List<ElementoLinea> elementos = new ArrayList<>();
+        Map<String, Integer> posicionesVistas = new HashMap<>();
+
+        for (int i = 0; i < lineas.length; i++) {
+            int numLinea = i + 1;
+            String linea = lineas[i];
+            if (linea.strip().isEmpty()) {
+                continue;
+            }
+
+            String[] campos = linea.split(";", -1);
+            if (campos.length < 3 || campos.length > 4) {
+                throw new ArbolInvalidoException("Línea " + numLinea + ": formato de campos inválido.");
+            }
+
+            String pos = campos[0].trim();
+            String nom = campos[1].trim();
+            String nacStr = campos[2].trim();
+            String falStr = (campos.length == 4) ? campos[3].trim() : "";
+
+            int nacimiento;
+            try {
+                nacimiento = Integer.parseInt(nacStr);
+            } catch (NumberFormatException e) {
+                throw new ArbolInvalidoException("Línea " + numLinea + ": año de nacimiento inválido.");
+            }
+
+            Integer fallecimiento = null;
+            if (!falStr.isEmpty()) {
+                try {
+                    fallecimiento = Integer.parseInt(falStr);
+                } catch (NumberFormatException e) {
+                    throw new ArbolInvalidoException("Línea " + numLinea + ": año de fallecimiento inválido.");
+                }
+            }
+
+            Persona persona;
+            try {
+                persona = new Persona(pos, nom, nacimiento, fallecimiento);
+                persona.validar();
+            } catch (IllegalArgumentException e) {
+                throw new ArbolInvalidoException("Línea " + numLinea + ": " + e.getMessage());
+            }
+
+            if (posicionesVistas.containsKey(pos)) {
+                throw new ArbolInvalidoException("Línea " + numLinea + ": la posición " + pos + " está repetida.");
+            }
+            posicionesVistas.put(pos, numLinea);
+
+            elementos.add(new ElementoLinea(numLinea, persona));
+        }
+
+        if (elementos.isEmpty()) {
+            throw new ArbolInvalidoException("El texto está vacío.");
+        }
+
+        ElementoLinea elemSujeto = null;
+        for (ElementoLinea elem : elementos) {
+            if (Posicion.esSujeto(elem.persona.getPosicion())) {
+                elemSujeto = elem;
+                break;
+            }
+        }
+
+        if (elemSujeto == null) {
+            throw new ArbolInvalidoException("Falta la persona en la posición 1 (el sujeto).");
+        }
+
+        ArbolGenealogico arbol;
+        try {
+            arbol = new ArbolGenealogico(elemSujeto.persona);
+        } catch (RuntimeException e) {
+            throw new ArbolInvalidoException("Línea " + elemSujeto.numeroLinea + ": " + e.getMessage());
+        }
+
+        List<ElementoLinea> ascendientes = new ArrayList<>();
+        List<ElementoLinea> descendientes = new ArrayList<>();
+
+        for (ElementoLinea elem : elementos) {
+            if (Posicion.esSujeto(elem.persona.getPosicion())) {
+                continue;
+            }
+            if (Posicion.esAscendiente(elem.persona.getPosicion())) {
+                ascendientes.add(elem);
+            } else if (Posicion.esDescendiente(elem.persona.getPosicion())) {
+                descendientes.add(elem);
+            }
+        }
+
+        ascendientes.sort(Comparator.comparingInt(e -> Integer.parseInt(e.persona.getPosicion())));
+        descendientes.sort(Comparator.comparingInt(e -> Posicion.generacion(e.persona.getPosicion())));
+
+        for (ElementoLinea elem : ascendientes) {
+            try {
+                arbol.agregar(elem.persona);
+            } catch (RuntimeException e) {
+                throw new ArbolInvalidoException("Línea " + elem.numeroLinea + ": " + e.getMessage());
+            }
+        }
+
+        for (ElementoLinea elem : descendientes) {
+            try {
+                arbol.agregar(elem.persona);
+            } catch (RuntimeException e) {
+                throw new ArbolInvalidoException("Línea " + elem.numeroLinea + ": " + e.getMessage());
+            }
+        }
+
+        return arbol;
     }
 }
